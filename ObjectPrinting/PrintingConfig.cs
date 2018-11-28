@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using System.Linq.Expressions;
@@ -9,99 +10,73 @@ namespace ObjectPrinting
 {
     public class PrintingConfig<TOwner>
     {
-        private readonly HashSet<Type> excludingTypes = new HashSet<Type>();
-        private readonly HashSet<PropertyInfo> excludingProperties = new HashSet<PropertyInfo>();
+        private readonly ExcludingConfigurator excludingConfigurator = new ExcludingConfigurator();
 
-        private readonly Dictionary<PropertyInfo, IPropertyPrintingConfig<TOwner>> printingPropertiesConfigs 
-            = new Dictionary<PropertyInfo, IPropertyPrintingConfig<TOwner>>();
-        private readonly Dictionary<Type, IPropertyPrintingConfig<TOwner>> printingTypesConfigs
-            = new Dictionary<Type, IPropertyPrintingConfig<TOwner>>();
+        private readonly CustomPrintingConfigurator<TOwner> customPrintingConfigurator
+            = new CustomPrintingConfigurator<TOwner>();
 
-        private static Expression<Func<object, string>> defaultPrintingMethod = obj => obj.ToString();
+        private readonly Type[] numberTypes = new[]
+        {
+            typeof(long), typeof(int), typeof(double), typeof(float)
+        };
 
         private readonly Type[] finalTypes = new[]
         {
             typeof(int), typeof(double), typeof(float), typeof(string),
             typeof(DateTime), typeof(TimeSpan)
         };
-      
-        private readonly Type[] numberTypes = new[]
+
+        private HashSet<object> visitedObjects = new HashSet<object>();
+
+        private static Func<IEnumerable, string> listPrintingMethod = (e) =>
         {
-            typeof(long), typeof(int), typeof(double), typeof(float)
+            var builder = new StringBuilder("[");
+            var enumerator = e.GetEnumerator();
+
+            if (enumerator.MoveNext())
+            {
+                builder.Append(enumerator.Current);
+            }
+
+            while (enumerator.MoveNext())
+            {
+                builder
+                    .Append(", ")
+                    .Append(enumerator.Current);
+            }
+
+            return builder
+                .Append("]")
+                .ToString();
         };
 
         public PrintingConfig<TOwner> Excluding<TPropType>()
         {
-            excludingTypes.Add(typeof(TPropType));
+            excludingConfigurator.ExcludeType<TPropType>();
             return this;
         }
 
         public PrintingConfig<TOwner> Excluding<TPropType>(Expression<Func<TOwner, TPropType>> propSelector)
         {
             var propertyInfo = (PropertyInfo)((MemberExpression) propSelector.Body).Member;
-            excludingProperties.Add(propertyInfo);
+            excludingConfigurator.ExcludeProperty(propertyInfo);
             return this;
         }
 
         public PropertyPrintingConfig<TOwner, TPropType> Printing<TPropType>()
         {
-            PropertyPrintingConfig<TOwner, TPropType> propConf;
-            var propType = typeof(TPropType);
-
-            if (propType == typeof(string))
-            {
-                propConf = new StringPropertyConfig<TOwner, TPropType>(this);
-            }
-            else if (numberTypes.Contains(propType))
-            {
-                propConf = new NumberPropertyConfig<TOwner, TPropType>(this);
-            }
-            else
-            {
-                propConf = new PropertyPrintingConfig<TOwner,TPropType>(this);
-            }
-
-            if (!printingTypesConfigs.ContainsKey(propType))
-            {
-                printingTypesConfigs.Add(typeof(TPropType), propConf);
-            }
-            else
-            {
-                propConf = (PropertyPrintingConfig<TOwner, TPropType>)printingTypesConfigs[propType];
-            }
-
-            return propConf;
+            return 
+                (PropertyPrintingConfig<TOwner, TPropType>)customPrintingConfigurator
+                    .AddConfigFor<TPropType>(this);
         }
 
         public PropertyPrintingConfig<TOwner, TPropType> Printing<TPropType>(Expression<Func<TOwner, TPropType>> propSelector)
         {
-            PropertyPrintingConfig<TOwner, TPropType> propConf;
             var propertyInfo = (PropertyInfo)((MemberExpression) propSelector.Body).Member;
-            var propType = typeof(TPropType);
 
-            if (propType == typeof(string))
-            {
-                propConf = new StringPropertyConfig<TOwner, TPropType>(this, propertyInfo);
-            }
-            else if (numberTypes.Contains(propType))
-            {
-                propConf = new NumberPropertyConfig<TOwner, TPropType>(this, propertyInfo);
-            }
-            else
-            {
-                propConf = new PropertyPrintingConfig<TOwner,TPropType>(this, propertyInfo);
-            }
-
-            if (!printingPropertiesConfigs.ContainsKey(propertyInfo))
-            {
-                printingPropertiesConfigs.Add(propertyInfo, propConf);
-            }
-            else
-            {
-                propConf = (PropertyPrintingConfig<TOwner, TPropType>)printingPropertiesConfigs[propertyInfo];
-            }
-
-            return propConf;
+            return (PropertyPrintingConfig<TOwner, TPropType>)
+                customPrintingConfigurator
+                    .AddConfigFor<TPropType>(propertyInfo, this);
         }
 
         public string PrintToString(TOwner obj)
@@ -116,13 +91,20 @@ namespace ObjectPrinting
                 return PrintLine("null");
 
             var type = obj.GetType();
-            var identation = new string('\t', nestingLevel + 1);
+            var indentation = new string('\t', nestingLevel + 1);
             var sb = new StringBuilder();
             sb.AppendLine(type.Name);
-            foreach (var propertyInfo in type.GetProperties().Except(excludingProperties)
-                .Where(prop => !excludingTypes.Contains(prop.PropertyType)))
+
+            if (visitedObjects.Contains(obj))
+                return sb.ToString();
+            visitedObjects.Add(obj);
+
+            if (obj is IEnumerable enumerable)
+                return listPrintingMethod(enumerable);
+
+            foreach (var propertyInfo in excludingConfigurator.Filter(type.GetProperties()))
             {
-                sb.Append(identation + propertyInfo.Name + " = " +
+                sb.Append(indentation + propertyInfo.Name + " = " +
                           (
                               finalTypes.Contains(propertyInfo.PropertyType)
                                   ? PrintLine(PrintProperty(obj, propertyInfo))
@@ -134,56 +116,27 @@ namespace ObjectPrinting
 
         private string PrintProperty(object obj, PropertyInfo propertyInfo)
         {
-            LambdaExpression printingMethod = null;
             if (propertyInfo.GetValue(obj) == null)
                 return "null";
 
-            var propertyType = propertyInfo.PropertyType;
-
-            if (printingTypesConfigs.ContainsKey(propertyType))
-            {
-                printingMethod = printingTypesConfigs[propertyType].PrintingMethod;
-            }
-
-            if (printingPropertiesConfigs.ContainsKey(propertyInfo))
-            {
-                printingMethod = printingPropertiesConfigs[propertyInfo].PrintingMethod ?? printingMethod;
-            }
-
-            printingMethod = printingMethod ?? defaultPrintingMethod;
+            var printingMethod = customPrintingConfigurator.GetPrintingMethod(propertyInfo);
             var printingResult = printingMethod.Compile().DynamicInvoke(propertyInfo.GetValue(obj));
 
-            if (propertyType == typeof(string))
+            if (propertyInfo.PropertyType == typeof(string))
             {
-                var printingResultString = printingResult.ToString();
-                var trimLength = printingTypesConfigs.ContainsKey(typeof(string))
-                    ? ((StringPropertyConfig<TOwner, string>)printingTypesConfigs[typeof(string)]).TrimLength
-                    : null;
-                trimLength = printingPropertiesConfigs.ContainsKey(propertyInfo)
-                    ? ((StringPropertyConfig<TOwner, string>) printingPropertiesConfigs[propertyInfo]).TrimLength ?? trimLength
-                    : trimLength;
-                return printingResultString
-                    .Substring(0, Math.Min(printingResultString.Length, trimLength ?? int.MaxValue));
+                var resultString = printingResult.ToString();
+                var trimLength = customPrintingConfigurator.GetTrimLength(propertyInfo);
+                return resultString.Substring(0, Math.Min(resultString.Length, trimLength ?? int.MaxValue));
             }
 
-            if (numberTypes.Contains(propertyType))
+            if (numberTypes.Contains(propertyInfo.PropertyType))
             {
-                var cultureInfo = printingTypesConfigs.ContainsKey(propertyType) 
-                    ? ((INumberPrintingConfig)printingTypesConfigs[propertyType]).CultureInfo
-                    : null;
-                cultureInfo = printingPropertiesConfigs.ContainsKey(propertyInfo)
-                    ? ((INumberPrintingConfig) printingPropertiesConfigs[propertyInfo]).CultureInfo ?? cultureInfo
-                    : cultureInfo;
+                var cultureInfo = customPrintingConfigurator.GetCultureInfo(propertyInfo);
                 return cultureInfo != null ? printingResult.ToString().ToString(cultureInfo) : printingResult.ToString();
             }
 
             return printingResult.ToString();
         }
-
-        //private LambdaExpression AllowCultureInfoToPrintingMethod(LambdaExpression printingMethod)
-        //{
-        //    printingMethod.Body.
-        //}
 
         private string PrintLine(string value)
         {

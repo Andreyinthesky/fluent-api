@@ -51,6 +51,9 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="CustomPrintingConfigurator.cs" />
+    <Compile Include="ExcludingConfigurator.cs" />
+    <Compile Include="IPropertyPrintingConfig.cs" />
     <Compile Include="NumberPropertyConfig.cs" />
     <Compile Include="ObjectExtensions.cs" />
     <Compile Include="ObjectPrinter.cs" />
@@ -61,8 +64,10 @@
     <Compile Include="StringPropertyConfig.cs" />
     <Compile Include="Tests\ObjectPrinterAcceptanceTests.cs" />
     <Compile Include="Tests\ObjectPrinterTests.cs" />
+    <Compile Include="Tests\ObjectTests.cs" />
     <Compile Include="Tests\Person.cs" />
     <Compile Include="Tests\PrintingConfigTests.cs" />
+    <Compile Include="Tests\Source.cs" />
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />

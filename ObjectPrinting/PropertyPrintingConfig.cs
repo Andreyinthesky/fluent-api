@@ -1,6 +1,4 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.Linq;
 using System.Linq.Expressions;
 using System.Reflection;
 
@@ -30,13 +28,5 @@ namespace ObjectPrinting
             printingMethod = printMethod;
             return config;
         }
-    }
-
-    public interface IPropertyPrintingConfig<TOwner>
-    {
-        PrintingConfig<TOwner> Config { get; }
-        PropertyInfo PropertyInfo { get; }
-        Type PropertyType { get; }
-        LambdaExpression PrintingMethod { get; }
     }
 }

@@ -1,7 +1,6 @@
 ﻿using System;
-using System.Drawing;
+using System.Collections.Generic;
 using System.Globalization;
-using FluentAssertions.Extensions;
 using NUnit.Framework;
 
 namespace ObjectPrinting.Tests
@@ -10,7 +9,7 @@ namespace ObjectPrinting.Tests
     public class ObjectPrinterAcceptanceTests
     {
         [Test]
-        public void Demo()
+        public void DemoPerson()
         {
             var person = new Person { Name = null, Age = 19, Height = 128.3};
             var str = "word";
@@ -38,6 +37,14 @@ namespace ObjectPrinting.Tests
             Console.WriteLine(s1);
             Console.WriteLine(s2);
             Console.WriteLine(s3);
+        }
+
+        [Test]
+        public void DemoList()
+        {
+            var list = new List<int>() {1, 2, 3, 4};
+            var str = list.PrintToString();
+            Console.WriteLine(str);
         }
     }
 }
