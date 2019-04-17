@@ -120,6 +120,14 @@ namespace ObjectPrinting
                 return "null";
 
             var printingMethod = customPrintingConfigurator.GetPrintingMethod(propertyInfo);
+
+            if (numberTypes.Contains(propertyInfo.PropertyType))
+            {
+                var cultureInfo = customPrintingConfigurator.GetCultureInfo(propertyInfo);
+                if (cultureInfo != null)
+                    return ((IFormattable) propertyInfo.GetValue(obj)).ToString(null, cultureInfo);
+            }
+            
             var printingResult = printingMethod.Compile().DynamicInvoke(propertyInfo.GetValue(obj));
 
             if (propertyInfo.PropertyType == typeof(string))
@@ -127,12 +135,6 @@ namespace ObjectPrinting
                 var resultString = printingResult.ToString();
                 var trimLength = customPrintingConfigurator.GetTrimLength(propertyInfo);
                 return resultString.Substring(0, Math.Min(resultString.Length, trimLength ?? int.MaxValue));
-            }
-
-            if (numberTypes.Contains(propertyInfo.PropertyType))
-            {
-                var cultureInfo = customPrintingConfigurator.GetCultureInfo(propertyInfo);
-                return cultureInfo != null ? printingResult.ToString().ToString(cultureInfo) : printingResult.ToString();
             }
 
             return printingResult.ToString();
